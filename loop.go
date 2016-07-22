@@ -3,10 +3,11 @@ package gosocketio
 import (
 	"encoding/json"
 	"errors"
-	"github.com/graarh/golang-socketio/protocol"
-	"github.com/graarh/golang-socketio/transport"
 	"sync"
 	"time"
+
+	"github.com/graarh/golang-socketio/protocol"
+	"github.com/graarh/golang-socketio/transport"
 )
 
 const (
@@ -118,17 +119,19 @@ func inLoop(c *Channel, m *methods) error {
 			return err
 		}
 
-		switch msg.Type {
-		case protocol.MessageTypeOpen:
-			if err := json.Unmarshal([]byte(msg.Source[1:]), &c.header); err != nil {
-				CloseChannel(c, m, ErrorWrongHeader)
+		if msg != nil {
+			switch msg.Type {
+			case protocol.MessageTypeOpen:
+				if err := json.Unmarshal([]byte(msg.Source[1:]), &c.header); err != nil {
+					CloseChannel(c, m, ErrorWrongHeader)
+				}
+				m.callLoopEvent(c, OnConnection)
+			case protocol.MessageTypePing:
+				c.out <- protocol.PongMessage
+			case protocol.MessageTypePong:
+			default:
+				go m.processIncomingMessage(c, msg)
 			}
-			m.callLoopEvent(c, OnConnection)
-		case protocol.MessageTypePing:
-			c.out <- protocol.PongMessage
-		case protocol.MessageTypePong:
-		default:
-			go m.processIncomingMessage(c, msg)
 		}
 	}
 	return nil
@@ -150,7 +153,7 @@ outgoing messages loop, sends messages from channel to socket
 func outLoop(c *Channel, m *methods) error {
 	for {
 		outBufferLen := len(c.out)
-		if outBufferLen >= queueBufferSize - 1 {
+		if outBufferLen >= queueBufferSize-1 {
 			return CloseChannel(c, m, ErrorSocketOverflood)
 		} else if outBufferLen > int(queueBufferSize/2) {
 			overfloodedLock.Lock()
